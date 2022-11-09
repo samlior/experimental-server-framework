@@ -10,6 +10,8 @@ import { cpus } from "node:os";
 import { createServer } from "node:http";
 import { createDB, doSomething, destroyDB } from "./db";
 
+const port = Number(process.env.SRV_PORT);
+
 if (isMainThread) {
   const workers: { worker: Worker; promise: Promise<void> }[] = [];
   for (let i = 0; i < cpus().length - 1; i++) {
@@ -57,7 +59,7 @@ if (isMainThread) {
 
   server.on("error", (err) => console.log("http server error:", err));
 
-  server.on("listening", () => console.log("http server listening at:", 3000));
+  server.on("listening", () => console.log("http server listening at:", port));
 
   let index = 0;
   function nextIndex() {
@@ -78,7 +80,7 @@ if (isMainThread) {
     });
   });
 
-  server.listen(3000);
+  server.listen(port);
 } else {
   (async () => {
     try {

@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import net from "node:net";
 import { createDB, doSomething, destroyDB } from "./db";
 
+const port = Number(process.env.SRV_PORT);
+
 if (cluster.isPrimary) {
   // setup
   cluster.setupPrimary({
@@ -59,7 +61,7 @@ if (cluster.isPrimary) {
 
   server.on("error", (err) => console.log("http server error:", err));
 
-  server.on("listening", () => console.log("http server listening at:", 3000));
+  server.on("listening", () => console.log("http server listening at:", port));
 
   let index = 0;
   function nextIndex() {
@@ -79,7 +81,7 @@ if (cluster.isPrimary) {
     });
   });
 
-  server.listen(3000);
+  server.listen(port);
 } else {
   (async () => {
     try {

@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import { createDB, doSomething, destroyDB } from "./db";
 
+const port = Number(process.env.SRV_PORT);
+
 (async () => {
   try {
     // create
@@ -19,10 +21,10 @@ import { createDB, doSomething, destroyDB } from "./db";
     server.on("error", (err) => console.log("http server error:", err));
 
     server.on("listening", () =>
-      console.log("http server listening at:", 3000)
+      console.log("http server listening at:", port)
     );
 
-    server.listen(3000);
+    server.listen(port);
 
     // handle signal
     let exiting = false;
