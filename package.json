@@ -6,6 +6,7 @@
   "scripts": {
     "cluster": "npm run build && node dist/cluster.js",
     "threads": "npm run build && node dist/threads.js",
+    "single": "npm run build && node dist/single.js",
     "build": "tsc"
   },
   "author": "samlior",
