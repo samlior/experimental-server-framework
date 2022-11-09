@@ -1,31 +1,50 @@
 import { createServer } from "node:http";
+import { createDB, doSomething, destroyDB } from "./db";
 
-const server = createServer((req, res) => {
-  req.on("readable", () => {
-    let body: Buffer = Buffer.alloc(0);
-    let chunk: Buffer;
-    while (!req.closed && null !== (chunk = req.read())) {
-      body = Buffer.concat([body, chunk]);
-    }
+(async () => {
+  try {
+    // create
+    const db = await createDB(false);
 
-    let timeout: NodeJS.Timeout | null = setTimeout(() => {
-      timeout = null;
-      res.end(`Response from master`);
-    }, 3000);
-
-    req.socket.on("close", () => {
-      if (timeout === null) {
-        return;
-      }
-
-      console.log("request canceled");
-      clearTimeout(timeout);
+    const server = createServer((req, res) => {
+      doSomething(db)
+        .then(() => {
+          res.end("Response from master");
+        })
+        .catch((err) => {
+          res.end("Response from master, err" + err.message);
+        });
     });
-  });
-});
 
-server.on("error", (err) => console.log("http server error:", err));
+    server.on("error", (err) => console.log("http server error:", err));
 
-server.on("listening", () => console.log("http server listening at:", 3000));
+    server.on("listening", () =>
+      console.log("http server listening at:", 3000)
+    );
 
-server.listen(3000);
+    server.listen(3000);
+
+    // handle signal
+    let exiting = false;
+    process.on("SIGINT", () => {
+      if (!exiting) {
+        console.log("exiting...");
+        exiting = true;
+        // waiting
+        destroyDB(db)
+          .then(() => {
+            console.log("finished");
+            process.exit(0);
+          })
+          .catch((err) => {
+            console.log("catch error when server exits:", err);
+            setTimeout(() => process.exit(1), 2000);
+          });
+      } else {
+        console.log("please waiting for exiting");
+      }
+    });
+  } catch (err) {
+    console.log("catch error:", err);
+  }
+})();
