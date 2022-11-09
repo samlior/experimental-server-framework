@@ -12,7 +12,7 @@ import { createDB, doSomething, destroyDB } from "./db";
           res.end("Response from master");
         })
         .catch((err) => {
-          res.end("Response from master, err" + err.message);
+          res.end("Response from master, err: " + err.message);
         });
     });
 

@@ -3,6 +3,7 @@ import { cpus } from "node:os";
 import process from "node:process";
 import { createServer } from "node:http";
 import net from "node:net";
+import { createDB, doSomething, destroyDB } from "./db";
 
 if (cluster.isPrimary) {
   // setup
@@ -80,45 +81,42 @@ if (cluster.isPrimary) {
 
   server.listen(3000);
 } else {
-  const server = createServer((req, res) => {
-    req.on("readable", () => {
-      let body: Buffer = Buffer.alloc(0);
-      let chunk: Buffer;
-      while (!req.closed && null !== (chunk = req.read())) {
-        body = Buffer.concat([body, chunk]);
-      }
+  (async () => {
+    try {
+      const db = await createDB(false);
 
-      let timeout: NodeJS.Timeout | null = setTimeout(() => {
-        timeout = null;
-        res.end(`Response from worker: ${cluster.worker!.id}`);
-      }, 3000);
-
-      req.socket.on("close", () => {
-        if (timeout === null) {
-          // ignore close event
-          return;
-        }
-
-        // cancel
-        console.log("request canceled");
-        clearTimeout(timeout);
+      const server = createServer((req, res) => {
+        doSomething(db)
+          .then(() => {
+            res.end(`Response from worker: ${cluster.worker!.id}`);
+          })
+          .catch((err) => {
+            res.end(
+              `Response from worker: ${cluster.worker!.id}, err:` + err.message
+            );
+          });
       });
-    });
-  });
 
-  process.on(
-    "message",
-    (
-      { method, data }: { method: string; data: string },
-      socket: net.Socket
-    ) => {
-      if (method === "exit") {
-        setTimeout(() => cluster.worker!.destroy(), 100);
-      } else if (method === "socket") {
-        server.emit("connection", socket);
-        socket.emit("data", Buffer.from(data));
-        socket.resume();
-      }
+      process.on(
+        "message",
+        (
+          { method, data }: { method: string; data: string },
+          socket: net.Socket
+        ) => {
+          if (method === "exit") {
+            setTimeout(async () => {
+              await destroyDB(db);
+              cluster.worker!.destroy();
+            }, 100);
+          } else if (method === "socket") {
+            server.emit("connection", socket);
+            socket.emit("data", Buffer.from(data));
+            socket.resume();
+          }
+        }
+      );
+    } catch (err) {
+      console.log("catch error:", err);
     }
-  );
+  })();
 }

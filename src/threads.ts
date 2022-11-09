@@ -8,6 +8,7 @@ import {
 } from "node:worker_threads";
 import { cpus } from "node:os";
 import { createServer } from "node:http";
+import { createDB, doSomething, destroyDB } from "./db";
 
 if (isMainThread) {
   const workers: { worker: Worker; promise: Promise<void> }[] = [];
@@ -68,57 +69,44 @@ if (isMainThread) {
   }
 
   server.on("request", async (req, res) => {
-    req.on("readable", () => {
-      let body: Buffer = Buffer.alloc(0);
-      let chunk: Buffer;
-      while (!req.closed && null !== (chunk = req.read())) {
-        body = Buffer.concat([body, chunk]);
-      }
-
-      const { worker } = workers[nextIndex()];
-      const { port1, port2 } = new MessageChannel();
-      worker.postMessage({ method: "request", body, port: port2 }, [port2]);
-      port1.on("message", (response) => {
-        res.end(response);
-        port1.close();
-      });
-
-      req.socket.on("close", () => {
-        port1.close();
-      });
+    const { worker } = workers[nextIndex()];
+    const { port1, port2 } = new MessageChannel();
+    worker.postMessage({ method: "request", port: port2 }, [port2]);
+    port1.on("message", (response) => {
+      res.end(response);
+      port1.close();
     });
   });
 
   server.listen(3000);
 } else {
-  parentPort!.on(
-    "message",
-    ({
-      method,
-      body,
-      port,
-    }: {
-      method: string;
-      body: Buffer;
-      port: MessagePort;
-    }) => {
-      if (method === "exit") {
-        setTimeout(() => process.exit(0), 100);
-      } else if (method === "request") {
-        let timeout: NodeJS.Timeout | null = setTimeout(() => {
-          timeout = null;
-          port.postMessage(`Response from worker: ${threadId}`);
-        }, 3000);
+  (async () => {
+    try {
+      const db = await createDB(false);
 
-        port.on("close", () => {
-          if (timeout === null) {
-            return;
+      parentPort!.on(
+        "message",
+        ({ method, port }: { method: string; port: MessagePort }) => {
+          if (method === "exit") {
+            setTimeout(async () => {
+              await destroyDB(db);
+              process.exit(0);
+            }, 100);
+          } else if (method === "request") {
+            doSomething(db)
+              .then(() => {
+                port.postMessage(`Response from worker: ${threadId}`);
+              })
+              .catch((err) => {
+                port.postMessage(
+                  `Response from worker: ${threadId}` + err.message
+                );
+              });
           }
-
-          console.log("request canceled");
-          clearTimeout(timeout);
-        });
-      }
+        }
+      );
+    } catch (err) {
+      console.log("catch error:", err);
     }
-  );
+  })();
 }
