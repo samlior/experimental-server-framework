@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
+import path from "node:path";
 import { Sequelize, DataTypes, Model } from "sequelize";
+import * as dotenv from "dotenv";
+
+dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const dataSize = 100000;
 
@@ -27,7 +31,7 @@ function initModel(sequelize: Sequelize) {
 
 export async function createDB(force: boolean) {
   const sequelize = new Sequelize(
-    "postgres://postgres:12345678@localhost:5432/experimental-server-framework",
+    `postgres://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
     { logging: false }
   );
   initModel(sequelize);
