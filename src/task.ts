@@ -38,6 +38,12 @@ async function* run<T>(
   return result!;
 }
 
+async function* raceNoExcept<T>(
+  fn: () => Promise<T>
+): AsyncGenerator<RaceRequest<T>, TaskNext<T>, TaskNext<T>> {
+  return yield new RaceRequest<T>(fn());
+}
+
 async function* race<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<RaceRequest<T>, T, TaskNext<T>> {
@@ -104,6 +110,7 @@ class MyClass {}
 
 async function myAsyncWork1() {
   await new Promise<void>((r) => setTimeout(r, 222));
+  console.log("work1 awake");
   if (4 % 2 === 0) {
     throw new Error("error");
   }
@@ -112,40 +119,48 @@ async function myAsyncWork1() {
 
 async function myAsyncWork2() {
   await new Promise<void>((r) => setTimeout(r, 222));
+  console.log("work2 awake");
   return 123;
 }
 
 async function myAsyncWork3() {
   await new Promise<void>((r) => setTimeout(r, 222));
+  console.log("work3 awake");
   return new MyClass();
 }
 
 async function* myTask(): AsyncGenerator<any, number, TaskNext<any>> {
-  {
-    const { error, result } = yield* runNoExcept(myAsyncWork1);
-    console.log("0 result:", result);
-    console.log("0 error:", error);
-  }
+  const startAt = Date.now();
 
   try {
-    const result = yield* run(myAsyncWork2);
-    console.log("1 result:", result);
-  } catch (err) {
-    console.log("1 error:", err);
-  }
+    {
+      const { error, result } = yield* runNoExcept(myAsyncWork1);
+      console.log("0 result:", result);
+      console.log("0 error:", error);
+    }
 
-  try {
-    const result = yield* run(myAsyncWork3);
-    console.log("2 result:", result);
-  } catch (err) {
-    console.log("2 error:", err);
+    try {
+      const result = yield* run(myAsyncWork2);
+      console.log("1 result:", result);
+    } catch (err) {
+      console.log("1 error:", err);
+    }
+
+    try {
+      const result = yield* race(myAsyncWork3);
+      console.log("2 result:", result);
+    } catch (err) {
+      console.log("2 error:", err);
+    }
+  } finally {
+    console.log("usage:", Date.now() - startAt);
   }
 
   return 1;
 }
 
 setTimeout(() => {
-  console.log("=== outer canceled");
+  console.log("=== canceled");
   scheduler.abort("canceled");
 }, 480);
 
