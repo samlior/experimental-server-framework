@@ -88,7 +88,8 @@ for (let i = 0; i < 3; i++) {
     });
 }
 
-setTimeout(() => {
+setTimeout(async () => {
   console.log("canceled");
-  scheduler.abort("canceled");
+  await scheduler.abortAndWait("canceled");
+  console.log("wait finished");
 }, 777);
