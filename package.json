@@ -9,7 +9,7 @@
     "threads": "npm run build && node dist/threads.js",
     "single": "npm run build && node dist/single.js",
     "multi": "npm run build && node dist/multi.js",
-    "task": "ts-node src/task.ts",
+    "test": "ts-node src/test.ts",
     "build": "tsc"
   },
   "author": "samlior",

@@ -1,17 +1,16 @@
-export const NO_ERROR = Symbol("NO_ERROR");
-export const NO_RESULT = Symbol("NO_RESULT");
-
 type Next<T> =
   | {
+      failed: true;
       error: any;
-      result: typeof NO_RESULT;
+      result?: undefined;
     }
   | {
-      error: typeof NO_ERROR;
+      failed: false;
+      error?: undefined;
       result: T;
     };
 
-type RaceResolved = [any, typeof NO_RESULT] | [typeof NO_ERROR, any];
+type RaceResolved = [any, any];
 
 class RaceRequest<T = any> {
   readonly promise: Promise<T>;
@@ -21,31 +20,24 @@ class RaceRequest<T = any> {
   }
 }
 
-export function isError<T>(next: Next<T>): next is {
-  error: any;
-  result: typeof NO_RESULT;
-} {
-  return next.result === NO_RESULT;
-}
-
 export async function* runNoExcept<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<T, Next<T>, Next<T>> {
   try {
     return yield await fn();
   } catch (error) {
-    return { error, result: NO_RESULT };
+    return { failed: true, error };
   }
 }
 
 export async function* run<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<T, T, Next<T>> {
-  const { error, result } = yield await fn();
-  if (result !== NO_RESULT) {
-    return result;
+  const { failed, error, result } = yield await fn();
+  if (failed) {
+    throw error;
   }
-  throw error;
+  return result;
 }
 
 export async function* raceNoExcept<T>(
@@ -57,40 +49,43 @@ export async function* raceNoExcept<T>(
 export async function* race<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<RaceRequest<T>, T, Next<T>> {
-  const { error, result } = yield new RaceRequest<T>(fn());
-  if (result !== NO_RESULT) {
-    return result;
+  const { failed, error, result } = yield new RaceRequest<T>(fn());
+  if (failed) {
+    throw error;
   }
-  throw error;
+  return result;
 }
 
-export type TaskGenerator<T> = AsyncGenerator<any, T, Next<T>>;
+export type TaskGenerator<T> = AsyncGenerator<any, T, Next<any>>;
 
 export class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
-  private reason: any = NO_ERROR;
+  private reason: any = undefined;
 
   abort(reason: any) {
-    if (reason === NO_ERROR) {
-      throw new Error("invalid reason");
+    if (reason === undefined) {
+      throw new Error("undefined reason");
     }
     this.reason = reason;
     for (const resolve of this.races) {
-      resolve([reason, NO_RESULT]);
+      resolve([reason, undefined]);
     }
   }
 
   resume() {
-    this.reason = NO_ERROR;
+    this.reason = undefined;
   }
 
   async run<T>(generator: TaskGenerator<T>): Promise<T> {
-    let latestError: any = NO_ERROR;
-    let latestResult: any = NO_RESULT;
+    let latestError: any = undefined;
+    let latestResult: any = undefined;
     while (true) {
+      const error = latestError ?? this.reason;
+      const result = error ? undefined : latestResult;
       const { value, done } = await generator.next({
-        error: latestError !== NO_ERROR ? latestError : this.reason,
-        result: latestResult,
+        failed: !!error,
+        error,
+        result,
       });
       if (done) {
         return value;
@@ -103,15 +98,15 @@ export class Scheduler {
         this.races.add(resolve);
         value.promise
           .then((result) => {
-            resolve([NO_ERROR, result]);
+            resolve([undefined, result]);
           })
           .catch((error) => {
-            resolve([error, NO_RESULT]);
+            resolve([error, undefined]);
           });
         [latestError, latestResult] = await taskFinishedOrAborted;
         this.races.delete(resolve);
       } else {
-        [latestError, latestResult] = [NO_ERROR, value];
+        [latestError, latestResult] = [undefined, value];
       }
     }
   }
