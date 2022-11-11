@@ -64,7 +64,7 @@ async function* race<T>(
   throw error;
 }
 
-class TaskScheduler {
+class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
   private reason: any = NO_ERROR;
 
@@ -82,7 +82,7 @@ class TaskScheduler {
     this.reason = NO_ERROR;
   }
 
-  async run<T>(generator: AsyncGenerator<any, T, any>): Promise<T> {
+  async run<T>(generator: AsyncGenerator<any, T, TaskNext<T>>): Promise<T> {
     let latestError: any = NO_ERROR;
     let latestResult: any = NO_RESULT;
     while (true) {
@@ -115,64 +115,58 @@ class TaskScheduler {
   }
 }
 
-const scheduler = new TaskScheduler();
+class CountTracer {
+  // TODO: maybe Number.MIN_SAFE_INTEGER?
+  private count = 0;
+  private resolve?: () => void;
+  private promise?: Promise<void>;
 
-class MyClass {}
-
-async function myAsyncWork1() {
-  await new Promise<void>((r) => setTimeout(r, 222));
-  console.log("work1 awake");
-  if (4 % 2 === 0) {
-    throw new Error("error");
-  }
-  return "wuhu";
-}
-
-async function myAsyncWork2() {
-  await new Promise<void>((r) => setTimeout(r, 222));
-  console.log("work2 awake");
-  return 123;
-}
-
-async function myAsyncWork3() {
-  await new Promise<void>((r) => setTimeout(r, 222));
-  console.log("work3 awake");
-  return new MyClass();
-}
-
-async function* myTask(): AsyncGenerator<any, number, TaskNext<any>> {
-  const startAt = Date.now();
-
-  try {
-    {
-      const { error, result } = yield* runNoExcept(myAsyncWork1);
-      console.log("0 result:", result);
-      console.log("0 error:", error);
-    }
-
-    try {
-      const result = yield* run(myAsyncWork2);
-      console.log("1 result:", result);
-    } catch (err) {
-      console.log("1 error:", err);
-    }
-
-    try {
-      const result = yield* race(myAsyncWork3);
-      console.log("2 result:", result);
-    } catch (err) {
-      console.log("2 error:", err);
-    }
-  } finally {
-    console.log("usage:", Date.now() - startAt);
+  private create() {
+    this.promise = new Promise<void>((r) => (this.resolve = r));
   }
 
-  return 1;
+  private destroy() {
+    this.resolve!();
+    this.resolve = undefined;
+    this.promise = undefined;
+  }
+
+  increase(i: number = 1) {
+    this.count += i;
+    if (this.count - i === 0) {
+      this.create();
+    }
+  }
+
+  decrease(i: number = 1) {
+    if (i > this.count) {
+      i = this.count;
+    }
+    this.count -= i;
+    if (this.count === 0) {
+      this.destroy();
+    }
+  }
+
+  wait() {
+    return this.promise ?? Promise.resolve();
+  }
 }
 
-setTimeout(() => {
-  console.log("=== canceled");
-  scheduler.abort("canceled");
-}, 480);
+class TracerScheduler extends Scheduler {
+  private tracer = new CountTracer();
 
-scheduler.run(myTask());
+  abortAndWait(reason: any) {
+    super.abort(reason);
+    return this.tracer.wait();
+  }
+
+  async run<T>(generator: AsyncGenerator<any, T, TaskNext<T>>): Promise<T> {
+    try {
+      this.tracer.increase();
+      return await super.run(generator);
+    } finally {
+      this.tracer.decrease();
+    }
+  }
+}
