@@ -1,48 +1,37 @@
-import { TracerScheduler, TaskGenerator, runNoExcept, Next } from "./scheduler";
+import {
+  TracerScheduler,
+  TaskGenerator,
+  runNoExcept,
+  Next,
+  raceNoExcept,
+} from "./scheduler";
 
 async function work(_depth: number, _work: number) {
+  console.log("depth:", _depth, "work:", _work, "start");
   await new Promise<void>((r) => setTimeout(r, 100));
-  return `result of depth: ${_depth} work: ${_work}`;
+  console.log("depth:", _depth, "work:", _work, "finished");
 }
 
 async function* depth(_depth: number): TaskGenerator<Next<string>> {
+  if (_depth === 4) {
+    return { failed: false, result: "ok" };
+  }
+
   console.log("depth:", _depth, "start");
   const startAt = Date.now();
 
-  let _work = 0;
-  async function* doWork() {
-    {
-      return yield* runNoExcept(work.bind(undefined, _depth, _work++));
-    }
-  }
-
   try {
-    {
-      const { failed, error, result } = yield* doWork();
+    for (let i = 0; i < 3; i++) {
+      const { failed, error, result } = yield* raceNoExcept(
+        work.bind(undefined, _depth, i)
+      );
       if (failed) {
-        console.log("stop at:", _depth, "work:", _work, "error:", error);
-        return { failed, error, result };
-      }
-      console.log(result);
-    }
-
-    {
-      const { failed, error, result } = yield* depth(_depth + 1);
-      if (failed) {
+        console.log("stop at:", _depth, "work:", i, "error:", error);
         return { failed, error, result };
       }
     }
 
-    {
-      const { failed, error, result } = yield* doWork();
-      if (failed) {
-        console.log("stop at:", _depth, "work:", _work, "error:", error);
-        return { failed, error, result };
-      }
-      console.log(result);
-    }
-
-    return { failed: false, error: undefined, result: "ok" };
+    return yield* depth(_depth + 1);
   } finally {
     console.log("depth:", _depth, "usage:", Date.now() - startAt);
   }
@@ -50,9 +39,11 @@ async function* depth(_depth: number): TaskGenerator<Next<string>> {
 
 const scheduler = new TracerScheduler();
 
-scheduler.run(depth(0));
+scheduler.run(depth(0)).then(({ failed, error, result }) => {
+  console.log("run return:", failed, error, result);
+});
 
 setTimeout(() => {
   console.log("canceled");
   scheduler.abort("canceled");
-}, 222);
+}, 777);
