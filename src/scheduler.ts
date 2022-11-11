@@ -78,6 +78,22 @@ export async function* sub<T>(
   return yield* fn();
 }
 
+export async function* checkNoExcept(): AsyncGenerator<
+  void,
+  Next<void>,
+  Next<any>
+> {
+  return yield await Promise.resolve();
+}
+
+export async function* check(): AsyncGenerator<void, Next<void>, Next<any>> {
+  const { failed, error, result } = yield await Promise.resolve();
+  if (failed) {
+    throw error;
+  }
+  return result;
+}
+
 export type TaskGenerator<T> = AsyncGenerator<any, T, Next<any>>;
 
 export class Scheduler {
