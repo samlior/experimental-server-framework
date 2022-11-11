@@ -156,6 +156,10 @@ export class CountTracer {
   private resolve?: () => void;
   private promise?: Promise<void>;
 
+  get parallels() {
+    return this.count;
+  }
+
   private create() {
     this.promise = new Promise<void>((r) => (this.resolve = r));
   }
@@ -190,6 +194,10 @@ export class CountTracer {
 
 export class TracerScheduler extends Scheduler {
   private tracer = new CountTracer();
+
+  get parallels() {
+    return this.tracer.parallels;
+  }
 
   abortAndWait(reason: any) {
     super.abort(reason);
