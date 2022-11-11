@@ -64,6 +64,8 @@ export async function* race<T>(
   throw error;
 }
 
+export type TaskGenerator<T> = AsyncGenerator<any, T, Next<T>>;
+
 export class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
   private reason: any = NO_ERROR;
@@ -82,7 +84,7 @@ export class Scheduler {
     this.reason = NO_ERROR;
   }
 
-  async run<T>(generator: AsyncGenerator<any, T, Next<T>>): Promise<T> {
+  async run<T>(generator: TaskGenerator<T>): Promise<T> {
     let latestError: any = NO_ERROR;
     let latestResult: any = NO_RESULT;
     while (true) {
@@ -161,7 +163,7 @@ export class TracerScheduler extends Scheduler {
     return this.tracer.wait();
   }
 
-  async run<T>(generator: AsyncGenerator<any, T, Next<T>>): Promise<T> {
+  async run<T>(generator: TaskGenerator<T>): Promise<T> {
     try {
       this.tracer.increase();
       return await super.run(generator);
