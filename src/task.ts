@@ -1,14 +1,17 @@
+const NO_ERROR = Symbol("NO_ERROR");
+const NO_RESULT = Symbol("NO_RESULT");
+
 type TaskNext<T> =
   | {
       error: any;
-      result: null;
+      result: typeof NO_RESULT;
     }
   | {
-      error: null;
+      error: typeof NO_ERROR;
       result: T;
     };
 
-type RaceResolved = [any, null] | [null, any];
+type RaceResolved = [any, typeof NO_RESULT] | [typeof NO_ERROR, any];
 
 class RaceRequest<T = any> {
   readonly promise: Promise<T>;
@@ -18,13 +21,20 @@ class RaceRequest<T = any> {
   }
 }
 
+function isError<T>(next: TaskNext<T>): next is {
+  error: any;
+  result: typeof NO_RESULT;
+} {
+  return next.result === NO_RESULT;
+}
+
 async function* runNoExcept<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<T, TaskNext<T>, TaskNext<T>> {
   try {
     return yield await fn();
   } catch (error) {
-    return { error, result: null };
+    return { error, result: NO_RESULT };
   }
 }
 
@@ -32,10 +42,10 @@ async function* run<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<T, T, TaskNext<T>> {
   const { error, result } = yield await fn();
-  if (error) {
-    throw error;
+  if (result !== NO_RESULT) {
+    return result;
   }
-  return result!;
+  throw error;
 }
 
 async function* raceNoExcept<T>(
@@ -48,37 +58,40 @@ async function* race<T>(
   fn: () => Promise<T>
 ): AsyncGenerator<RaceRequest<T>, T, TaskNext<T>> {
   const { error, result } = yield new RaceRequest<T>(fn());
-  if (error) {
-    throw error;
+  if (result !== NO_RESULT) {
+    return result;
   }
-  return result!;
+  throw error;
 }
 
 class TaskScheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
-  private reason: any = null;
+  private reason: any = NO_ERROR;
 
   abort(reason: any) {
-    if (reason === undefined || reason === null) {
-      throw new Error("invalid reason, undefined or null");
+    if (reason === NO_ERROR) {
+      throw new Error("invalid reason");
     }
     this.reason = reason;
     for (const resolve of this.races) {
-      resolve([null, null]);
+      resolve([reason, NO_RESULT]);
     }
   }
 
+  resume() {
+    this.reason = NO_ERROR;
+  }
+
   async run<T>(generator: AsyncGenerator<any, T, any>): Promise<T> {
-    let latestError: any = null;
-    let latestResult: any = null;
+    let latestError: any = NO_ERROR;
+    let latestResult: any = NO_RESULT;
     while (true) {
-      const iterResult: any = await generator.next({
-        error: latestError ?? this.reason,
+      const { value, done } = await generator.next({
+        error: latestError !== NO_ERROR ? latestError : this.reason,
         result: latestResult,
       });
-      latestError = null;
-      latestResult = null;
-      const { value, done } = iterResult;
+      latestError = NO_ERROR;
+      latestResult = NO_RESULT;
       if (done) {
         return value;
       }
@@ -90,15 +103,15 @@ class TaskScheduler {
         this.races.add(resolve);
         value.promise
           .then((result) => {
-            resolve([null, result]);
+            resolve([NO_ERROR, result]);
           })
           .catch((error) => {
-            resolve([error, null]);
+            resolve([error, NO_RESULT]);
           });
         [latestError, latestResult] = await taskFinishedOrAborted;
         this.races.delete(resolve);
       } else {
-        [latestError, latestResult] = [null, value];
+        [latestError, latestResult] = [NO_ERROR, value];
       }
     }
   }
@@ -137,6 +150,11 @@ async function* myTask(): AsyncGenerator<any, number, TaskNext<any>> {
       const { error, result } = yield* runNoExcept(myAsyncWork1);
       console.log("0 result:", result);
       console.log("0 error:", error);
+      if (result === NO_RESULT) {
+        return 0;
+      }
+
+      result.charAt(0);
     }
 
     try {
