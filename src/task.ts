@@ -90,8 +90,6 @@ class TaskScheduler {
         error: latestError !== NO_ERROR ? latestError : this.reason,
         result: latestResult,
       });
-      latestError = NO_ERROR;
-      latestResult = NO_RESULT;
       if (done) {
         return value;
       }
@@ -150,11 +148,6 @@ async function* myTask(): AsyncGenerator<any, number, TaskNext<any>> {
       const { error, result } = yield* runNoExcept(myAsyncWork1);
       console.log("0 result:", result);
       console.log("0 error:", error);
-      if (result === NO_RESULT) {
-        return 0;
-      }
-
-      result.charAt(0);
     }
 
     try {
