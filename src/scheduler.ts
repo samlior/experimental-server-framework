@@ -56,6 +56,28 @@ export async function* race<T>(
   return result;
 }
 
+export async function* subNoExcept<T>(
+  fn: () => TaskGenerator<T>
+): AsyncGenerator<any, Next<T>, Next<any>> {
+  try {
+    return {
+      failed: false,
+      result: yield* fn(),
+    };
+  } catch (error) {
+    return {
+      failed: true,
+      error,
+    };
+  }
+}
+
+export async function* sub<T>(
+  fn: () => TaskGenerator<T>
+): AsyncGenerator<any, T, Next<any>> {
+  return yield* fn();
+}
+
 export type TaskGenerator<T> = AsyncGenerator<any, T, Next<any>>;
 
 export class Scheduler {

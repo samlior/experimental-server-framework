@@ -2,8 +2,8 @@ import {
   TracerScheduler,
   TaskGenerator,
   runNoExcept,
-  Next,
   raceNoExcept,
+  subNoExcept,
 } from "./scheduler";
 
 async function work(_depth: number, _work: number) {
@@ -12,9 +12,10 @@ async function work(_depth: number, _work: number) {
   console.log("depth:", _depth, "work:", _work, "finished");
 }
 
-async function* depth(_depth: number): TaskGenerator<Next<string>> {
+async function* depth(_depth: number): TaskGenerator<string> {
   if (_depth === 4) {
-    return { failed: false, result: "ok" };
+    throw new Error("depth reached 4");
+    // return "ok";
   }
 
   console.log("depth:", _depth, "start");
@@ -22,16 +23,24 @@ async function* depth(_depth: number): TaskGenerator<Next<string>> {
 
   try {
     for (let i = 0; i < 3; i++) {
-      const { failed, error, result } = yield* raceNoExcept(
+      const { failed, error } = yield* runNoExcept(
         work.bind(undefined, _depth, i)
       );
       if (failed) {
         console.log("stop at:", _depth, "work:", i, "error:", error);
-        return { failed, error, result };
+        return "not ok";
       }
     }
 
-    return yield* depth(_depth + 1);
+    const { failed, error, result } = yield* subNoExcept(
+      depth.bind(undefined, _depth + 1)
+    );
+    if (failed) {
+      console.log("stop at:", _depth, "error:", error);
+      return "not ok";
+    }
+
+    return result;
   } finally {
     console.log("depth:", _depth, "usage:", Date.now() - startAt);
   }
@@ -39,11 +48,11 @@ async function* depth(_depth: number): TaskGenerator<Next<string>> {
 
 const scheduler = new TracerScheduler();
 
-scheduler.run(depth(0)).then(({ failed, error, result }) => {
-  console.log("run return:", failed, error, result);
+scheduler.run(depth(0)).then((result) => {
+  console.log("run return:", result);
 });
 
-setTimeout(() => {
-  console.log("canceled");
-  scheduler.abort("canceled");
-}, 777);
+// setTimeout(() => {
+//   console.log("canceled");
+//   scheduler.abort("canceled");
+// }, 777);
