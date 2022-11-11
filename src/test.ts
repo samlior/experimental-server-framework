@@ -9,10 +9,10 @@ import {
   sub,
 } from "./scheduler";
 
-async function work(_depth: number, _work: number) {
-  console.log("depth:", _depth, "work:", _work, "start");
+async function work(_id: number, _depth: number, _work: number) {
+  console.log("id:", _id, "depth:", _depth, "work:", _work, "start");
   await new Promise<void>((r) => setTimeout(r, 100));
-  console.log("depth:", _depth, "work:", _work, "finished");
+  console.log("id:", _id, "depth:", _depth, "work:", _work, "finished");
 }
 
 async function* depthNoExcept(
@@ -30,7 +30,7 @@ async function* depthNoExcept(
   try {
     for (let i = 0; i < 3; i++) {
       const { failed, error } = yield* runNoExcept(
-        work.bind(undefined, _depth, i)
+        work.bind(undefined, _id, _depth, i)
       );
       if (failed) {
         console.log("stop at, id:", _id, "depth", _depth, "error:", error);
@@ -63,7 +63,7 @@ async function* depth(_id: number, _depth: number): TaskGenerator<string> {
 
   try {
     for (let i = 0; i < 3; i++) {
-      yield* run(work.bind(undefined, _depth, i));
+      yield* run(work.bind(undefined, _id, _depth, i));
     }
 
     return yield* sub(depth.bind(undefined, _id, _depth + 1));
@@ -77,14 +77,16 @@ async function* depth(_id: number, _depth: number): TaskGenerator<string> {
 
 const scheduler = new TracerScheduler();
 
-scheduler
-  .run(depthNoExcept(0, 0))
-  .then((result) => {
-    console.log("run return:", result);
-  })
-  .catch((error) => {
-    console.log("run catch:", error);
-  });
+for (let i = 0; i < 3; i++) {
+  scheduler
+    .run(depthNoExcept(i, 0))
+    .then((result) => {
+      console.log("run return:", result);
+    })
+    .catch((error) => {
+      console.log("run catch:", error);
+    });
+}
 
 setTimeout(() => {
   console.log("canceled");
