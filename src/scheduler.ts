@@ -1,4 +1,4 @@
-type Next<T> =
+export type Next<T> =
   | {
       failed: true;
       error: any;

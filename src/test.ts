@@ -1,64 +1,50 @@
-import { TracerScheduler, TaskGenerator, runNoExcept } from "./scheduler";
+import { TracerScheduler, TaskGenerator, runNoExcept, Next } from "./scheduler";
 
-async function work(depth: number, work: number) {
+async function work(_depth: number, _work: number) {
   await new Promise<void>((r) => setTimeout(r, 100));
-  return `result of depth: ${depth} work: ${work}`;
+  return `result of depth: ${_depth} work: ${_work}`;
 }
 
-async function* depth(depth: number): TaskGenerator<void> {
-  console.log("depth:", depth, "start");
+async function* depth(_depth: number): TaskGenerator<Next<string>> {
+  console.log("depth:", _depth, "start");
   const startAt = Date.now();
-  let index = 0;
+
+  let _work = 0;
+  async function* doWork() {
+    {
+      return yield* runNoExcept(work.bind(undefined, _depth, _work++));
+    }
+  }
+
   try {
     {
-      const workerIndex = index++;
-      const { failed, error, result } = yield* runNoExcept(
-        work.bind(undefined, depth, workerIndex)
-      );
+      const { failed, error, result } = yield* doWork();
       if (failed) {
-        console.log("stop at:", depth, "work:", workerIndex, "error:", error);
-        return;
+        console.log("stop at:", _depth, "work:", _work, "error:", error);
+        return { failed, error, result };
       }
       console.log(result);
     }
 
     {
-      const workerIndex = index++;
-      const { failed, error, result } = yield* runNoExcept(
-        work.bind(undefined, depth, workerIndex)
-      );
+      const { failed, error, result } = yield* depth(_depth + 1);
       if (failed) {
-        console.log("stop at:", depth, "work:", workerIndex, "error:", error);
-        return;
+        return { failed, error, result };
+      }
+    }
+
+    {
+      const { failed, error, result } = yield* doWork();
+      if (failed) {
+        console.log("stop at:", _depth, "work:", _work, "error:", error);
+        return { failed, error, result };
       }
       console.log(result);
     }
 
-    {
-      const workerIndex = index++;
-      const { failed, error, result } = yield* runNoExcept(
-        work.bind(undefined, depth, workerIndex)
-      );
-      if (failed) {
-        console.log("stop at:", depth, "work:", workerIndex, "error:", error);
-        return;
-      }
-      console.log(result);
-    }
-
-    {
-      const workerIndex = index++;
-      const { failed, error, result } = yield* runNoExcept(
-        work.bind(undefined, depth, workerIndex)
-      );
-      if (failed) {
-        console.log("stop at:", depth, "work:", workerIndex, "error:", error);
-        return;
-      }
-      console.log(result);
-    }
+    return { failed: false, error: undefined, result: "ok" };
   } finally {
-    console.log("depth:", depth, "usage:", Date.now() - startAt);
+    console.log("depth:", _depth, "usage:", Date.now() - startAt);
   }
 }
 
