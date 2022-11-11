@@ -1,7 +1,7 @@
-const NO_ERROR = Symbol("NO_ERROR");
-const NO_RESULT = Symbol("NO_RESULT");
+export const NO_ERROR = Symbol("NO_ERROR");
+export const NO_RESULT = Symbol("NO_RESULT");
 
-type TaskNext<T> =
+type Next<T> =
   | {
       error: any;
       result: typeof NO_RESULT;
@@ -21,16 +21,16 @@ class RaceRequest<T = any> {
   }
 }
 
-function isError<T>(next: TaskNext<T>): next is {
+export function isError<T>(next: Next<T>): next is {
   error: any;
   result: typeof NO_RESULT;
 } {
   return next.result === NO_RESULT;
 }
 
-async function* runNoExcept<T>(
+export async function* runNoExcept<T>(
   fn: () => Promise<T>
-): AsyncGenerator<T, TaskNext<T>, TaskNext<T>> {
+): AsyncGenerator<T, Next<T>, Next<T>> {
   try {
     return yield await fn();
   } catch (error) {
@@ -38,9 +38,9 @@ async function* runNoExcept<T>(
   }
 }
 
-async function* run<T>(
+export async function* run<T>(
   fn: () => Promise<T>
-): AsyncGenerator<T, T, TaskNext<T>> {
+): AsyncGenerator<T, T, Next<T>> {
   const { error, result } = yield await fn();
   if (result !== NO_RESULT) {
     return result;
@@ -48,15 +48,15 @@ async function* run<T>(
   throw error;
 }
 
-async function* raceNoExcept<T>(
+export async function* raceNoExcept<T>(
   fn: () => Promise<T>
-): AsyncGenerator<RaceRequest<T>, TaskNext<T>, TaskNext<T>> {
+): AsyncGenerator<RaceRequest<T>, Next<T>, Next<T>> {
   return yield new RaceRequest<T>(fn());
 }
 
-async function* race<T>(
+export async function* race<T>(
   fn: () => Promise<T>
-): AsyncGenerator<RaceRequest<T>, T, TaskNext<T>> {
+): AsyncGenerator<RaceRequest<T>, T, Next<T>> {
   const { error, result } = yield new RaceRequest<T>(fn());
   if (result !== NO_RESULT) {
     return result;
@@ -64,7 +64,7 @@ async function* race<T>(
   throw error;
 }
 
-class Scheduler {
+export class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
   private reason: any = NO_ERROR;
 
@@ -82,7 +82,7 @@ class Scheduler {
     this.reason = NO_ERROR;
   }
 
-  async run<T>(generator: AsyncGenerator<any, T, TaskNext<T>>): Promise<T> {
+  async run<T>(generator: AsyncGenerator<any, T, Next<T>>): Promise<T> {
     let latestError: any = NO_ERROR;
     let latestResult: any = NO_RESULT;
     while (true) {
@@ -115,7 +115,7 @@ class Scheduler {
   }
 }
 
-class CountTracer {
+export class CountTracer {
   // TODO: maybe Number.MIN_SAFE_INTEGER?
   private count = 0;
   private resolve?: () => void;
@@ -153,7 +153,7 @@ class CountTracer {
   }
 }
 
-class TracerScheduler extends Scheduler {
+export class TracerScheduler extends Scheduler {
   private tracer = new CountTracer();
 
   abortAndWait(reason: any) {
@@ -161,7 +161,7 @@ class TracerScheduler extends Scheduler {
     return this.tracer.wait();
   }
 
-  async run<T>(generator: AsyncGenerator<any, T, TaskNext<T>>): Promise<T> {
+  async run<T>(generator: AsyncGenerator<any, T, Next<T>>): Promise<T> {
     try {
       this.tracer.increase();
       return await super.run(generator);
