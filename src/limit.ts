@@ -1,19 +1,22 @@
+import LinkedList, { Node } from "yallist";
+
 export enum TokenStatus {
   Idle,
   Working,
-  Stop,
+  Stopped,
 }
 
 export class Token {
-  lc: LimitedConcurrency;
+  readonly limited: Limited;
+
   status: TokenStatus = TokenStatus.Idle;
 
-  constructor(lc: LimitedConcurrency) {
-    this.lc = lc;
+  constructor(limited: Limited) {
+    this.limited = limited;
   }
 
   async invoke<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.status !== TokenStatus.Stop) {
+    if (this.status !== TokenStatus.Stopped) {
       throw new Error("invalid token status");
     }
 
@@ -21,65 +24,83 @@ export class Token {
       this.status = TokenStatus.Working;
       return await fn();
     } finally {
-      this.status = TokenStatus.Stop;
-    }
-  }
-
-  async *invoke2<T>(fn: () => AsyncGenerator<any, T>): AsyncGenerator<any, T> {
-    if (this.status !== TokenStatus.Stop) {
-      throw new Error("invalid token status");
-    }
-
-    try {
-      this.status = TokenStatus.Working;
-      return yield* fn();
-    } finally {
-      this.status = TokenStatus.Stop;
+      this.status = TokenStatus.Stopped;
     }
   }
 }
 
-type TokenGetter = {
+export enum RequestStatus {
+  Queued,
+  Finished,
+  Canceled,
+}
+
+export type RequestValue = {
+  status: RequestStatus;
   resolve: (token: Token) => void;
   reject: (reason?: any) => void;
 };
 
-export class LimitedConcurrency {
-  private idle = new Set<Token>();
-  private busy = new Set<Token>();
-  private queue: TokenGetter[] = [];
+export type Request = Node<RequestValue>;
 
-  async getToken() {
-    let token: Token;
-    if (this.idle.size > 0) {
-      const { value }: { value: Token } = this.idle.values().next();
-      this.idle.delete(value);
-      token = value;
-      token.status = TokenStatus.Stop;
+function toNode<T>(value: T) {
+  return {
+    prev: null,
+    next: null,
+    value,
+  };
+}
+
+export class Limited {
+  private idle = LinkedList.create<Token>();
+  private queue = LinkedList.create<RequestValue>();
+
+  get(): { getToken: Promise<Token>; request?: Request } {
+    if (this.idle.length > 0) {
+      const token = this.idle.shift()!;
+      token.status = TokenStatus.Stopped;
+      return { getToken: Promise.resolve(token) };
     } else {
-      token = await new Promise<Token>((resolve, reject) => {
-        this.queue.push({ resolve, reject });
+      let resolve!: (token: Token) => void;
+      let reject!: (reason?: any) => void;
+      const getToken = new Promise<Token>((_resolve, _reject) => {
+        resolve = _resolve;
+        reject = _reject;
       });
+      const requestValue: RequestValue = {
+        status: RequestStatus.Queued,
+        resolve,
+        reject,
+      };
+      const request = toNode(requestValue);
+      this.queue.pushNode(request);
+      return { getToken, request };
     }
-    this.busy.add(token);
-    return token;
   }
 
-  putToken(token: Token) {
-    if (
-      token.lc !== this ||
-      token.status !== TokenStatus.Stop ||
-      !this.busy.delete(token)
-    ) {
+  put(token: Token) {
+    if (token.limited !== this || token.status !== TokenStatus.Stopped) {
       throw new Error("invalid token");
     }
-
     if (this.queue.length > 0) {
-      const { resolve } = this.queue.shift()!;
-      resolve(token);
+      const request = this.queue.shift()!;
+      request.status = RequestStatus.Finished;
+      request.resolve(token);
     } else {
-      this.idle.add(token);
       token.status = TokenStatus.Idle;
+      this.idle.push(token);
     }
+  }
+
+  cancel(request: Request, reason?: any) {
+    if (
+      request.list !== this.queue ||
+      request.value.status !== RequestStatus.Queued
+    ) {
+      throw new Error("invalid request");
+    }
+    this.queue.removeNode(request);
+    request.value.status = RequestStatus.Canceled;
+    request.value.reject(reason);
   }
 }
