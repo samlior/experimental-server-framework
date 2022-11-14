@@ -11,6 +11,7 @@
     "multi": "npm run build && node dist/multi.js",
     "test": "ts-node src/test.ts",
     "express": "ts-node src/express.ts",
+    "limited": "ts-node src/limited.ts",
     "build": "tsc"
   },
   "author": "samlior",

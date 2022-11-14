@@ -55,6 +55,12 @@ export class Limited {
   private idle = LinkedList.create<Token>();
   private queue = LinkedList.create<RequestValue>();
 
+  constructor(tokens: number) {
+    for (let i = 0; i < tokens; i++) {
+      this.idle.push(new Token(this));
+    }
+  }
+
   get(): { getToken: Promise<Token>; request?: Request } {
     if (this.idle.length > 0) {
       const token = this.idle.shift()!;
