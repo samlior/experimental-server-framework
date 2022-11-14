@@ -29,19 +29,19 @@ async function* depthNoExcept(
 
   try {
     for (let i = 0; i < 3; i++) {
-      const { failed, error } = yield* runNoExcept(
+      const { ok, error } = yield* runNoExcept(
         work.bind(undefined, _id, _depth, i)
       );
-      if (failed) {
+      if (!ok) {
         console.log("stop at, id:", _id, "depth", _depth, "error:", error);
         return "not ok";
       }
     }
 
-    const { failed, error, result } = yield* subNoExcept(
+    const { ok, error, result } = yield* subNoExcept(
       depthNoExcept.bind(undefined, _id, _depth + 1)
     );
-    if (failed) {
+    if (!ok) {
       console.log("stop at, id:", _id, "depth", _depth, "error:", error);
       return "not ok";
     }

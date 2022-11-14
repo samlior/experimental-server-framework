@@ -1,11 +1,11 @@
-export type Next<T> =
+export type Result<T> =
   | {
-      failed: true;
+      ok: false;
       error: any;
       result?: undefined;
     }
   | {
-      failed: false;
+      ok: true;
       error?: undefined;
       result: T;
     };
@@ -22,19 +22,19 @@ class RaceRequest<T = any> {
 
 export async function* runNoExcept<T>(
   fn: () => Promise<T>
-): AsyncGenerator<T, Next<T>, Next<T>> {
+): AsyncGenerator<T, Result<T>, Result<T>> {
   try {
     return yield await fn();
   } catch (error) {
-    return { failed: true, error };
+    return { ok: false, error };
   }
 }
 
 export async function* run<T>(
   fn: () => Promise<T>
-): AsyncGenerator<T, T, Next<T>> {
-  const { failed, error, result } = yield await fn();
-  if (failed) {
+): AsyncGenerator<T, T, Result<T>> {
+  const { ok, error, result } = yield await fn();
+  if (!ok) {
     throw error;
   }
   return result;
@@ -42,15 +42,15 @@ export async function* run<T>(
 
 export async function* raceNoExcept<T>(
   fn: () => Promise<T>
-): AsyncGenerator<RaceRequest<T>, Next<T>, Next<T>> {
+): AsyncGenerator<RaceRequest<T>, Result<T>, Result<T>> {
   return yield new RaceRequest<T>(fn());
 }
 
 export async function* race<T>(
   fn: () => Promise<T>
-): AsyncGenerator<RaceRequest<T>, T, Next<T>> {
-  const { failed, error, result } = yield new RaceRequest<T>(fn());
-  if (failed) {
+): AsyncGenerator<RaceRequest<T>, T, Result<T>> {
+  const { ok, error, result } = yield new RaceRequest<T>(fn());
+  if (!ok) {
     throw error;
   }
   return result;
@@ -58,15 +58,15 @@ export async function* race<T>(
 
 export async function* subNoExcept<T>(
   fn: () => TaskGenerator<T>
-): AsyncGenerator<any, Next<T>, Next<any>> {
+): AsyncGenerator<any, Result<T>, Result<any>> {
   try {
     return {
-      failed: false,
+      ok: true,
       result: yield* fn(),
     };
   } catch (error) {
     return {
-      failed: true,
+      ok: false,
       error,
     };
   }
@@ -74,27 +74,31 @@ export async function* subNoExcept<T>(
 
 export async function* sub<T>(
   fn: () => TaskGenerator<T>
-): AsyncGenerator<any, T, Next<any>> {
+): AsyncGenerator<any, T, Result<any>> {
   return yield* fn();
 }
 
 export async function* checkNoExcept(): AsyncGenerator<
   void,
-  Next<void>,
-  Next<any>
+  Result<void>,
+  Result<any>
 > {
   return yield await Promise.resolve();
 }
 
-export async function* check(): AsyncGenerator<void, Next<void>, Next<any>> {
-  const { failed, error, result } = yield await Promise.resolve();
-  if (failed) {
+export async function* check(): AsyncGenerator<
+  void,
+  Result<void>,
+  Result<any>
+> {
+  const { ok, error, result } = yield await Promise.resolve();
+  if (!ok) {
     throw error;
   }
   return result;
 }
 
-export type TaskGenerator<T> = AsyncGenerator<any, T, Next<any>>;
+export type TaskGenerator<T> = AsyncGenerator<any, T, Result<any>>;
 
 export class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
@@ -121,7 +125,7 @@ export class Scheduler {
       const error = latestError ?? this.reason;
       const result = error ? undefined : latestResult;
       const { value, done } = await generator.next({
-        failed: !!error,
+        ok: !error,
         error,
         result,
       });
