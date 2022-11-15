@@ -1,9 +1,12 @@
 import cluster, { Worker } from "node:cluster";
 import { cpus } from "node:os";
 import process from "node:process";
-import { createServer } from "node:http";
 import net from "node:net";
-import { createDB, doSomething, destroyDB } from "./db";
+import { createServer } from "node:http";
+import express from "express";
+import { createDB, limitedDoSomething, destroyDB } from "./db";
+import { Limited } from "./limited";
+import { TracerScheduler } from "./scheduler";
 
 const port = Number(process.env.SRV_PORT);
 
@@ -31,31 +34,6 @@ if (cluster.isPrimary) {
     });
   }
 
-  // handle signal
-  let exiting = false;
-  process.on("SIGINT", () => {
-    if (!exiting) {
-      console.log("exiting...");
-      exiting = true;
-      // notify all workers to exit
-      for (const { worker } of workers) {
-        worker.send({ method: "exit" });
-      }
-      // waiting
-      Promise.all(workers.map(({ promise }) => promise))
-        .then(() => {
-          console.log("finished");
-          process.exit(0);
-        })
-        .catch((err) => {
-          console.log("catch error when server exits:", err);
-          setTimeout(() => process.exit(1), 2000);
-        });
-    } else {
-      console.log("please waiting for exiting");
-    }
-  });
-
   // start http server
   const server = createServer();
 
@@ -81,22 +59,64 @@ if (cluster.isPrimary) {
     });
   });
 
+  // handle signal
+  let exiting = false;
+  process.on("SIGINT", () => {
+    if (!exiting) {
+      console.log("exiting...");
+      exiting = true;
+      server.close();
+      // notify all workers to exit
+      for (const { worker } of workers) {
+        worker.send({ method: "exit" });
+      }
+      const timeout = setTimeout(() => {
+        console.log("timeout");
+        process.exit(1);
+      }, 5000);
+      // waiting for worker exits
+      Promise.all(workers.map(({ promise }) => promise))
+        .then(() => {
+          console.log("finished");
+        })
+        .catch((err) => {
+          console.log("catch error when server exits:", err);
+        })
+        .finally(() => clearTimeout(timeout));
+    } else {
+      console.log("please waiting for exiting");
+    }
+  });
+
   server.listen(port);
 } else {
   (async () => {
     try {
       const db = await createDB(false);
 
-      const server = createServer((req, res) => {
-        doSomething(db)
-          .then(() => {
-            res.end(`Response from worker: ${cluster.worker!.id}`);
-          })
-          .catch((err) => {
-            res.end(
-              `Response from worker: ${cluster.worker!.id}, err:` + err.message
-            );
+      const app = express();
+
+      const server = createServer(app);
+
+      const limited = new Limited(1000, 2000);
+
+      app.get("/", (req, res) => {
+        const scheduler = new TracerScheduler();
+        scheduler
+          .exec(limitedDoSomething(limited, db))
+          .then(() => res.send(`ok, worker:${cluster.worker!.id}`))
+          .catch((error) => {
+            console.log("request error:", error);
+            if (!req.socket.closed) {
+              res.statusCode = 500;
+              res.send("failed");
+            }
           });
+        req.socket.on("close", () => {
+          if (scheduler.parallels > 0) {
+            scheduler.abort("canceled");
+          }
+        });
       });
 
       process.on(
@@ -107,6 +127,8 @@ if (cluster.isPrimary) {
         ) => {
           if (method === "exit") {
             setTimeout(async () => {
+              // close server
+              server.close();
               await destroyDB(db);
               cluster.worker!.destroy();
             }, 100);

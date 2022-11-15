@@ -39,7 +39,7 @@ function mergeResults<T>(
     if (result && !result.ok) {
       return result;
     } else {
-      return { ok, error };
+      return { ok, error, result: result?.result };
     }
   } else {
     return result!;
@@ -93,29 +93,6 @@ export async function* race<T>(
   }
   return result;
 }
-
-export async function* subNoExcept<T>(
-  generator: ReturnTypeIs<T>
-): AsyncGenerator<any, Result<T>, Result<any>> {
-  try {
-    return {
-      ok: true,
-      result: yield* generator,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error,
-    };
-  }
-}
-
-// NOTE: same as yield*
-// export async function* sub<T>(
-//   fn: () => TaskGenerator<T>
-// ): AsyncGenerator<any, T, Result<any>> {
-//   return yield* fn();
-// }
 
 export async function* checkNoExcept(): AsyncGenerator<
   void,
