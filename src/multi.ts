@@ -1,8 +1,11 @@
 import cluster, { Worker } from "node:cluster";
 import { cpus } from "node:os";
 import process from "node:process";
-import { createServer } from "node:http";
-import { createDB, doSomething, destroyDB } from "./db";
+import { Server } from "node:http";
+import express from "express";
+import { createDB, limitedDoSomething, destroyDB } from "./db";
+import { Limited } from "./limited";
+import { TracerScheduler } from "./scheduler";
 
 if (cluster.isPrimary) {
   // setup
@@ -45,16 +48,19 @@ if (cluster.isPrimary) {
       for (const { worker } of workers) {
         worker.send({ method: "exit" });
       }
-      // waiting
+      const timeout = setTimeout(() => {
+        console.log("timeout");
+        process.exit(1);
+      }, 5000);
+      // waiting for worker exits
       Promise.all(workers.map(({ promise }) => promise))
         .then(() => {
           console.log("finished");
-          process.exit(0);
         })
         .catch((err) => {
           console.log("catch error when server exits:", err);
-          setTimeout(() => process.exit(1), 2000);
-        });
+        })
+        .finally(() => clearTimeout(timeout));
     } else {
       console.log("please waiting for exiting");
     }
@@ -62,42 +68,47 @@ if (cluster.isPrimary) {
 } else {
   (async () => {
     try {
+      // create
       const db = await createDB(false);
+
+      const app = express();
+
+      const limited = new Limited(1000, 2000);
+
+      app.get("/", (req, res) => {
+        const scheduler = new TracerScheduler();
+        scheduler
+          .exec(limitedDoSomething(limited, db))
+          .then(() => res.send(`ok, worker: ${cluster.worker!.id}`))
+          .catch((error) => {
+            console.log("request error:", error);
+            if (!req.socket.closed) {
+              res.statusCode = 500;
+              res.send("failed");
+            }
+          });
+        req.socket.on("close", () => {
+          if (scheduler.parallels > 0) {
+            scheduler.abort("canceled");
+          }
+        });
+      });
+
+      let server: Server | undefined;
 
       process.on(
         "message",
         ({ method, port }: { method: string; port: number }) => {
           if (method === "exit") {
             setTimeout(async () => {
+              server?.close();
               await destroyDB(db);
               cluster.worker!.destroy();
             }, 100);
           } else if (method === "start") {
-            // start http server
-            const server = createServer((req, res) => {
-              doSomething(db)
-                .then(() => {
-                  res.end(`Response from worker: ${cluster.worker!.id}`);
-                })
-                .catch((err) => {
-                  res.end(
-                    `Response from worker: ${cluster.worker!.id}, err:` +
-                      err.message
-                  );
-                });
+            server = app.listen(port, () => {
+              console.log(`server listening on port ${port}`);
             });
-
-            server.on("error", (err) => console.log("http server error:", err));
-
-            server.on("listening", () =>
-              console.log(
-                `worker: ${
-                  cluster.worker!.id
-                }, http server listening at: ${port}`
-              )
-            );
-
-            server.listen(port);
           }
         }
       );
