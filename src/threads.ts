@@ -7,8 +7,10 @@ import {
   threadId,
 } from "node:worker_threads";
 import { cpus } from "node:os";
-import { createServer } from "node:http";
-import { createDB, doSomething, destroyDB } from "./db";
+import express from "express";
+import { createDB, limitedDoSomething, destroyDB } from "./db";
+import { Limited } from "./limited";
+import { TracerScheduler } from "./scheduler";
 
 const port = Number(process.env.SRV_PORT);
 
@@ -29,37 +31,8 @@ if (isMainThread) {
     });
   }
 
-  // handle signal
-  let exiting = false;
-  process.on("SIGINT", () => {
-    if (!exiting) {
-      console.log("exiting...");
-      exiting = true;
-      // notify all workers to exit
-      for (const { worker } of workers) {
-        worker.postMessage({ method: "exit" });
-      }
-      // waiting
-      Promise.all(workers.map(({ promise }) => promise))
-        .then(() => {
-          console.log("finished");
-          process.exit(0);
-        })
-        .catch((err) => {
-          console.log("catch error when server exits:", err);
-          setTimeout(() => process.exit(1), 2000);
-        });
-    } else {
-      console.log("please waiting for exiting");
-    }
-  });
-
   // start http server
-  const server = createServer();
-
-  server.on("error", (err) => console.log("http server error:", err));
-
-  server.on("listening", () => console.log("http server listening at:", port));
+  const app = express();
 
   let index = 0;
   function nextIndex() {
@@ -70,7 +43,7 @@ if (isMainThread) {
     return result;
   }
 
-  server.on("request", async (req, res) => {
+  app.get("/", (req, res) => {
     const { worker } = workers[nextIndex()];
     const { port1, port2 } = new MessageChannel();
     worker.postMessage({ method: "request", port: port2 }, [port2]);
@@ -78,13 +51,47 @@ if (isMainThread) {
       res.end(response);
       port1.close();
     });
+    req.socket.on("close", () => {
+      port1.close();
+    });
   });
 
-  server.listen(port);
+  const server = app.listen(port);
+
+  // handle signal
+  let exiting = false;
+  process.on("SIGINT", () => {
+    if (!exiting) {
+      console.log("exiting...");
+      exiting = true;
+      server.close();
+      // notify all workers to exit
+      for (const { worker } of workers) {
+        worker.postMessage({ method: "exit" });
+      }
+      const timeout = setTimeout(() => {
+        console.log("timeout");
+        process.exit(1);
+      }, 5000);
+      // waiting for worker exits
+      Promise.all(workers.map(({ promise }) => promise))
+        .then(() => {
+          console.log("finished");
+        })
+        .catch((err) => {
+          console.log("catch error when server exits:", err);
+        })
+        .finally(() => clearTimeout(timeout));
+    } else {
+      console.log("please waiting for exiting");
+    }
+  });
 } else {
   (async () => {
     try {
       const db = await createDB(false);
+
+      const limited = new Limited(1000, 2000);
 
       parentPort!.on(
         "message",
@@ -95,15 +102,19 @@ if (isMainThread) {
               process.exit(0);
             }, 100);
           } else if (method === "request") {
-            doSomething(db)
-              .then(() => {
-                port.postMessage(`Response from worker: ${threadId}`);
-              })
-              .catch((err) => {
-                port.postMessage(
-                  `Response from worker: ${threadId}` + err.message
-                );
+            const scheduler = new TracerScheduler();
+            scheduler
+              .exec(limitedDoSomething(limited, db))
+              .then(() => port.postMessage(`ok, worker: ${threadId}`))
+              .catch((error) => {
+                console.log("request error:", error);
+                port.postMessage("failed");
               });
+            port.on("close", () => {
+              if (scheduler.parallels > 0) {
+                scheduler.abort("canceled");
+              }
+            });
           }
         }
       );
