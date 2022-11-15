@@ -55,6 +55,22 @@ if (isMainThread) {
     });
   });
 
+  app
+    .post("/")
+    .use(express.json())
+    .use((req, res) => {
+      const { worker } = workers[nextIndex()];
+      const { port1, port2 } = new MessageChannel();
+      worker.postMessage({ method: "request", port: port2 }, [port2]);
+      port1.on("message", (response) => {
+        res.end(response);
+        port1.close();
+      });
+      req.socket.on("close", () => {
+        port1.close();
+      });
+    });
+
   const server = app.listen(port);
 
   // handle signal
