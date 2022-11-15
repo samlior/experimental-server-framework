@@ -1,3 +1,13 @@
+import LinkedList, { Node } from "yallist";
+
+function toNode<T>(value: T): Node<T> {
+  return {
+    prev: null,
+    next: null,
+    value,
+  };
+}
+
 export type Result<T> =
   | {
       ok: false;
@@ -120,7 +130,7 @@ export async function* check(): AsyncGenerator<
 export type ReturnTypeIs<T> = AsyncGenerator<any, T, Result<any>>;
 
 export class Scheduler {
-  private readonly races = new Set<(result: RaceResolved) => void>();
+  private readonly races = LinkedList.create<(result: RaceResolved) => void>();
   private reason: any = undefined;
 
   abort(reason: any) {
@@ -161,7 +171,8 @@ export class Scheduler {
           const taskFinishedOrAborted = new Promise<RaceResolved>((r) => {
             resolve = r;
           });
-          this.races.add(resolve);
+          const node = toNode(resolve);
+          this.races.pushNode(node);
           value.promise
             .then((result) => {
               resolve([undefined, result]);
@@ -170,7 +181,7 @@ export class Scheduler {
               resolve([error, undefined]);
             });
           [error, result] = await taskFinishedOrAborted;
-          this.races.delete(resolve);
+          this.races.removeNode(node);
         } else {
           [error, result] = [undefined, value];
         }
@@ -197,7 +208,8 @@ export class Scheduler {
         const taskFinishedOrAborted = new Promise<RaceResolved>((r) => {
           resolve = r;
         });
-        this.races.add(resolve);
+        const node = toNode(resolve);
+        this.races.pushNode(node);
         value.promise
           .then((result) => {
             resolve([undefined, result]);
@@ -206,7 +218,7 @@ export class Scheduler {
             resolve([error, undefined]);
           });
         [error, result] = await taskFinishedOrAborted;
-        this.races.delete(resolve);
+        this.races.removeNode(node);
       } else {
         [error, result] = [undefined, value];
       }
