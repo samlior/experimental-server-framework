@@ -47,6 +47,10 @@ const port = Number(process.env.SRV_PORT);
         server.close(() => {
           console.log("server closed");
         });
+        const timeout = setTimeout(() => {
+          console.log("timeout");
+          process.exit(1);
+        }, 5000);
         // close database
         destroyDB(db)
           .then(() => {
@@ -54,7 +58,8 @@ const port = Number(process.env.SRV_PORT);
           })
           .catch((err) => {
             console.log("catch error when server exits:", err);
-          });
+          })
+          .finally(() => clearTimeout(timeout));
       } else {
         console.log("please waiting for exiting");
       }
