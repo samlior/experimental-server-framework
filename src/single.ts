@@ -12,14 +12,20 @@ const port = Number(process.env.SRV_PORT);
 
     const app = express();
 
-    const limited = new Limited(1000);
+    const limited = new Limited(1000, 2000);
 
     app.get("/", (req, res) => {
       const scheduler = new TracerScheduler();
       scheduler
         .exec(limitedDoSomething(limited, db))
         .then(() => res.send("ok"))
-        .catch((error) => console.log("request error:", error));
+        .catch((error) => {
+          console.log("request error:", error);
+          if (!req.socket.closed) {
+            res.statusCode = 500;
+            res.send("failed");
+          }
+        });
       req.socket.on("close", () => {
         if (scheduler.parallels > 0) {
           scheduler.abort("canceled");

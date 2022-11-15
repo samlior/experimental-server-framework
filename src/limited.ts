@@ -69,11 +69,13 @@ function toNode<T>(value: T) {
 export class Limited {
   private idle = LinkedList.create<Token>();
   private queue = LinkedList.create<RequestValue>();
+  private maxQueued: number;
 
-  constructor(tokens: number) {
-    for (let i = 0; i < tokens; i++) {
+  constructor(maxTokens: number, maxQueued: number) {
+    for (let i = 0; i < maxTokens; i++) {
       this.idle.push(new Token(this));
     }
+    this.maxQueued = maxQueued;
   }
 
   get(): { getToken: Promise<Token>; request?: Request } {
@@ -81,7 +83,7 @@ export class Limited {
       const token = this.idle.shift()!;
       token.status = TokenStatus.Stopped;
       return { getToken: Promise.resolve(token) };
-    } else {
+    } else if (this.queue.length + 1 <= this.maxQueued) {
       let resolve!: (token: Token) => void;
       let reject!: (reason?: any) => void;
       const getToken = new Promise<Token>((_resolve, _reject) => {
@@ -96,6 +98,8 @@ export class Limited {
       const request = toNode(requestValue);
       this.queue.pushNode(request);
       return { getToken, request };
+    } else {
+      throw new Error("too many queued");
     }
   }
 
