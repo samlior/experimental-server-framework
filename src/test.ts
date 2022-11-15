@@ -39,7 +39,7 @@ async function* taskNoExcept(
   _depth: number
 ): ReturnTypeIs<Result<string>> {
   for (let i = 0; i < 10; i++) {
-    const { ok, error } = yield* run(
+    const { ok, error } = yield* runNoExcept(
       workNoExcept.bind(undefined, _id, _depth, i)
     );
     if (!ok) {
