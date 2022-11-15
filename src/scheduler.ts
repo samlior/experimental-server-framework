@@ -46,11 +46,21 @@ function mergeResults<T>(
   }
 }
 
+export function toNoExcept<T>(promise: Promise<T>): Promise<Result<T>> {
+  return promise
+    .then((result) => {
+      return { ok: true, error: undefined, result };
+    })
+    .catch((error) => {
+      return { ok: false, error };
+    });
+}
+
 export async function* runNoExcept<T>(
-  fn: () => Promise<Result<T>>
+  promise: Promise<Result<T>>
 ): AsyncGenerator<Result<T>, Result<T>, Result<Result<T>>> {
   try {
-    const { ok, error, result } = yield await fn();
+    const { ok, error, result } = yield await promise;
     return mergeResults(ok, error, result);
   } catch (error) {
     return { ok: false, error };
@@ -58,9 +68,9 @@ export async function* runNoExcept<T>(
 }
 
 export async function* run<T>(
-  fn: () => Promise<T>
+  promise: Promise<T>
 ): AsyncGenerator<T, T, Result<T>> {
-  const { ok, error, result } = yield await fn();
+  const { ok, error, result } = yield await promise;
   if (!ok) {
     throw error;
   }
@@ -68,16 +78,16 @@ export async function* run<T>(
 }
 
 export async function* raceNoExcept<T>(
-  fn: () => Promise<Result<T>>
+  promise: Promise<Result<T>>
 ): AsyncGenerator<RaceRequest<Result<T>>, Result<T>, Result<Result<T>>> {
-  const { ok, error, result } = yield new RaceRequest<Result<T>>(fn());
+  const { ok, error, result } = yield new RaceRequest<Result<T>>(promise);
   return mergeResults(ok, error, result);
 }
 
 export async function* race<T>(
-  fn: () => Promise<T>
+  promise: Promise<T>
 ): AsyncGenerator<RaceRequest<T>, T, Result<T>> {
-  const { ok, error, result } = yield new RaceRequest<T>(fn());
+  const { ok, error, result } = yield new RaceRequest<T>(promise);
   if (!ok) {
     throw error;
   }
@@ -85,12 +95,12 @@ export async function* race<T>(
 }
 
 export async function* subNoExcept<T>(
-  fn: () => ReturnTypeIs<T>
+  generator: ReturnTypeIs<T>
 ): AsyncGenerator<any, Result<T>, Result<any>> {
   try {
     return {
       ok: true,
-      result: yield* fn(),
+      result: yield* generator,
     };
   } catch (error) {
     return {
