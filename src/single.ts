@@ -1,5 +1,6 @@
-import { createServer } from "node:http";
-import { createDB, doSomething, destroyDB } from "./db";
+import express from "express";
+import { createDB, doSomething2, destroyDB } from "./db";
+import { TracerScheduler } from "./scheduler";
 
 const port = Number(process.env.SRV_PORT);
 
@@ -8,23 +9,24 @@ const port = Number(process.env.SRV_PORT);
     // create
     const db = await createDB(false);
 
-    const server = createServer((req, res) => {
-      doSomething(db)
-        .then(() => {
-          res.end("Response from master");
-        })
-        .catch((err) => {
-          res.end("Response from master, err: " + err.message);
-        });
+    const app = express();
+
+    app.get("/", (req, res) => {
+      const scheduler = new TracerScheduler();
+      scheduler
+        .exec(doSomething2(db))
+        .then(() => res.send("ok"))
+        .catch((error) => console.log("request error:", error));
+      req.socket.on("close", () => {
+        if (scheduler.parallels > 0) {
+          scheduler.abort("canceled");
+        }
+      });
     });
 
-    server.on("error", (err) => console.log("http server error:", err));
-
-    server.on("listening", () =>
-      console.log("http server listening at:", port)
-    );
-
-    server.listen(port);
+    const server = app.listen(port, () => {
+      console.log(`server listening on port ${port}`);
+    });
 
     // handle signal
     let exiting = false;
@@ -32,7 +34,11 @@ const port = Number(process.env.SRV_PORT);
       if (!exiting) {
         console.log("exiting...");
         exiting = true;
-        // waiting
+        // close server
+        server.close(() => {
+          console.log("server closed");
+        });
+        // close database
         destroyDB(db)
           .then(() => {
             console.log("finished");

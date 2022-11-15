@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { Sequelize, DataTypes, Model } from "sequelize";
 import * as dotenv from "dotenv";
-import { run, runNoExcept, toNoExcept } from "./scheduler";
+import { ReturnTypeIs, run, runNoExcept, toNoExcept } from "./scheduler";
 
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
@@ -79,7 +79,7 @@ export async function doSomething(sequelize: Sequelize) {
   }
 }
 
-export async function* doSomething2(sequelize: Sequelize) {
+export async function* doSomething2(sequelize: Sequelize): ReturnTypeIs<void> {
   // 开启事务
   const {
     ok,

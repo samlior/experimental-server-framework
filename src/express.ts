@@ -15,7 +15,7 @@ async function* doSomething(): ReturnTypeIs<string> {
   console.log("req start");
   try {
     for (let i = 0; i < 5; i++) {
-      yield* race(doWork);
+      yield* race(doWork());
     }
     return "finished!";
   } finally {
