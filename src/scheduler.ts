@@ -137,6 +137,49 @@ export class Scheduler {
     this.reason = undefined;
   }
 
+  async execNoExcept<T>(
+    generator: ReturnTypeIs<Result<T>>
+  ): Promise<Result<T>> {
+    try {
+      let error: any = undefined;
+      let result: any = undefined;
+      while (true) {
+        const { value, done } = await generator.next({
+          ok: !error && !this.reason,
+          error: error ?? this.reason,
+          result,
+        });
+        if (done) {
+          return mergeResults(
+            !error && !this.reason,
+            error ?? this.reason,
+            value
+          );
+        }
+        if (value instanceof RaceRequest) {
+          let resolve!: (result: RaceResolved) => void;
+          const taskFinishedOrAborted = new Promise<RaceResolved>((r) => {
+            resolve = r;
+          });
+          this.races.add(resolve);
+          value.promise
+            .then((result) => {
+              resolve([undefined, result]);
+            })
+            .catch((error) => {
+              resolve([error, undefined]);
+            });
+          [error, result] = await taskFinishedOrAborted;
+          this.races.delete(resolve);
+        } else {
+          [error, result] = [undefined, value];
+        }
+      }
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
   async exec<T>(generator: ReturnTypeIs<T>): Promise<T> {
     let error: any = undefined;
     let result: any = undefined;
@@ -223,6 +266,17 @@ export class TracerScheduler extends Scheduler {
   abortAndWait(reason: any) {
     super.abort(reason);
     return this.tracer.wait();
+  }
+
+  async execNoExcept<T>(
+    generator: ReturnTypeIs<Result<T>>
+  ): Promise<Result<T>> {
+    try {
+      this.tracer.increase();
+      return await super.execNoExcept(generator);
+    } finally {
+      this.tracer.decrease();
+    }
   }
 
   async exec<T>(generator: ReturnTypeIs<T>): Promise<T> {
