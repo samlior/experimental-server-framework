@@ -139,7 +139,7 @@ export class Scheduler {
     }
     this.reason = reason;
     for (const resolve of this.races) {
-      resolve([reason, undefined]);
+      resolve([undefined, undefined]);
     }
   }
 
