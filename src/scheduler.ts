@@ -2,7 +2,7 @@ export type Result<T> =
   | {
       ok: false;
       error: any;
-      result?: undefined;
+      result?: T;
     }
   | {
       ok: true;
@@ -20,11 +20,28 @@ class RaceRequest<T = any> {
   }
 }
 
+function mergeResults<T>(
+  ok: boolean,
+  error: any,
+  result?: Result<T>
+): Result<T> {
+  if (!ok) {
+    if (result && !result.ok) {
+      return result;
+    } else {
+      return { ok, error };
+    }
+  } else {
+    return result!;
+  }
+}
+
 export async function* runNoExcept<T>(
-  fn: () => Promise<T>
-): AsyncGenerator<T, Result<T>, Result<T>> {
+  fn: () => Promise<Result<T>>
+): AsyncGenerator<Result<T>, Result<T>, Result<Result<T>>> {
   try {
-    return yield await fn();
+    const { ok, error, result } = yield await fn();
+    return mergeResults(ok, error, result);
   } catch (error) {
     return { ok: false, error };
   }
@@ -41,9 +58,10 @@ export async function* run<T>(
 }
 
 export async function* raceNoExcept<T>(
-  fn: () => Promise<T>
-): AsyncGenerator<RaceRequest<T>, Result<T>, Result<T>> {
-  return yield new RaceRequest<T>(fn());
+  fn: () => Promise<Result<T>>
+): AsyncGenerator<RaceRequest<Result<T>>, Result<T>, Result<Result<T>>> {
+  const { ok, error, result } = yield new RaceRequest<Result<T>>(fn());
+  return mergeResults(ok, error, result);
 }
 
 export async function* race<T>(
@@ -57,7 +75,7 @@ export async function* race<T>(
 }
 
 export async function* subNoExcept<T>(
-  fn: () => TaskGenerator<T>
+  fn: () => ReturnTypeIs<T>
 ): AsyncGenerator<any, Result<T>, Result<any>> {
   try {
     return {
@@ -72,11 +90,12 @@ export async function* subNoExcept<T>(
   }
 }
 
-export async function* sub<T>(
-  fn: () => TaskGenerator<T>
-): AsyncGenerator<any, T, Result<any>> {
-  return yield* fn();
-}
+// NOTE: same as yield*
+// export async function* sub<T>(
+//   fn: () => TaskGenerator<T>
+// ): AsyncGenerator<any, T, Result<any>> {
+//   return yield* fn();
+// }
 
 export async function* checkNoExcept(): AsyncGenerator<
   void,
@@ -98,7 +117,7 @@ export async function* check(): AsyncGenerator<
   return result;
 }
 
-export type TaskGenerator<T> = AsyncGenerator<any, T, Result<any>>;
+export type ReturnTypeIs<T> = AsyncGenerator<any, T, Result<any>>;
 
 export class Scheduler {
   private readonly races = new Set<(result: RaceResolved) => void>();
@@ -118,15 +137,13 @@ export class Scheduler {
     this.reason = undefined;
   }
 
-  async run<T>(generator: TaskGenerator<T>): Promise<T> {
-    let latestError: any = undefined;
-    let latestResult: any = undefined;
+  async exec<T>(generator: ReturnTypeIs<T>): Promise<T> {
+    let error: any = undefined;
+    let result: any = undefined;
     while (true) {
-      const error = latestError ?? this.reason;
-      const result = error ? undefined : latestResult;
       const { value, done } = await generator.next({
-        ok: !error,
-        error,
+        ok: !error && !this.reason,
+        error: error ?? this.reason,
         result,
       });
       if (done) {
@@ -145,10 +162,10 @@ export class Scheduler {
           .catch((error) => {
             resolve([error, undefined]);
           });
-        [latestError, latestResult] = await taskFinishedOrAborted;
+        [error, result] = await taskFinishedOrAborted;
         this.races.delete(resolve);
       } else {
-        [latestError, latestResult] = [undefined, value];
+        [error, result] = [undefined, value];
       }
     }
   }
@@ -208,10 +225,10 @@ export class TracerScheduler extends Scheduler {
     return this.tracer.wait();
   }
 
-  async run<T>(generator: TaskGenerator<T>): Promise<T> {
+  async exec<T>(generator: ReturnTypeIs<T>): Promise<T> {
     try {
       this.tracer.increase();
-      return await super.run(generator);
+      return await super.exec(generator);
     } finally {
       this.tracer.decrease();
     }

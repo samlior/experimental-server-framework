@@ -1,6 +1,6 @@
 import process from "node:process";
 import express from "express";
-import { TracerScheduler, TaskGenerator, run, race } from "./scheduler";
+import { TracerScheduler, ReturnTypeIs, run, race } from "./scheduler";
 
 const app = express();
 const port = 3000;
@@ -11,7 +11,7 @@ async function doWork() {
   console.log("work finished");
 }
 
-async function* doSomething(): TaskGenerator<string> {
+async function* doSomething(): ReturnTypeIs<string> {
   console.log("req start");
   try {
     for (let i = 0; i < 5; i++) {
@@ -26,7 +26,7 @@ async function* doSomething(): TaskGenerator<string> {
 app.get("/", (req, res) => {
   const scheduler = new TracerScheduler();
   scheduler
-    .run(doSomething())
+    .exec(doSomething())
     .then((resps) => res.send(resps))
     .catch((err) => console.log("req catch:", err));
   req.socket.on("close", () => {
