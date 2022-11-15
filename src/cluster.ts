@@ -4,9 +4,8 @@ import process from "node:process";
 import net from "node:net";
 import { createServer } from "node:http";
 import express from "express";
-import { createDB, limitedDoSomething, destroyDB } from "./db";
-import { Limited } from "./limited";
-import { TracerScheduler } from "./scheduler";
+import { createDB, doSomething, destroyDB } from "./db";
+import { Limited, TracerScheduler } from "./utils";
 
 const port = Number(process.env.SRV_PORT);
 
@@ -103,7 +102,7 @@ if (cluster.isPrimary) {
       app.get("/", (req, res) => {
         const scheduler = new TracerScheduler();
         scheduler
-          .exec(limitedDoSomething(limited, db))
+          .exec(doSomething(limited, db))
           .then(() => res.send(`ok, worker:${cluster.worker!.id}`))
           .catch((error) => {
             console.log("request error:", error);

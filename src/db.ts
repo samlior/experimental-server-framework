@@ -2,14 +2,16 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import dotenv from "dotenv";
 import { Sequelize, DataTypes, Model } from "sequelize";
-import { Limited, RequestStatus, Token } from "./limited";
 import {
+  Limited,
+  RequestStatus,
+  Token,
   ReturnTypeIs,
   run,
   runNoExcept,
   raceNoExcept,
   toNoExcept,
-} from "./scheduler";
+} from "./utils";
 
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
@@ -63,30 +65,7 @@ export async function initData(sequelize: Sequelize) {
   }
 }
 
-export async function doSomething(sequelize: Sequelize) {
-  // 开启事务
-  const transaction = await sequelize.transaction();
-  try {
-    const name = randomBytes(32).toString("hex");
-    const age = 18;
-    // 增
-    const user = await User.create({ name, age }, { transaction });
-    // 查
-    await User.findAll({ where: { name }, transaction });
-    // 改
-    user.age = 19;
-    await user.save({ transaction });
-    // 删
-    await user.destroy({ transaction });
-    // 提交事务
-    await transaction.commit();
-  } catch (err) {
-    await transaction.rollback();
-    throw err;
-  }
-}
-
-export async function* doSomething2(sequelize: Sequelize): ReturnTypeIs<void> {
+async function* _doSomething(sequelize: Sequelize): ReturnTypeIs<void> {
   // 开启事务
   const {
     ok,
@@ -123,10 +102,7 @@ export async function* doSomething2(sequelize: Sequelize): ReturnTypeIs<void> {
   }
 }
 
-export async function* limitedDoSomething(
-  limited: Limited,
-  sequelize: Sequelize
-) {
+export async function* doSomething(limited: Limited, sequelize: Sequelize) {
   const { request, getToken } = limited.get();
   let token: Token;
   if (request) {
@@ -145,7 +121,7 @@ export async function* limitedDoSomething(
   }
 
   try {
-    yield* token.invoke2(doSomething2(sequelize));
+    yield* token.invoke2(_doSomething(sequelize));
   } finally {
     limited.put(token);
   }

@@ -3,9 +3,8 @@ import { cpus } from "node:os";
 import process from "node:process";
 import { Server } from "node:http";
 import express from "express";
-import { createDB, limitedDoSomething, destroyDB } from "./db";
-import { Limited } from "./limited";
-import { TracerScheduler } from "./scheduler";
+import { createDB, doSomething, destroyDB } from "./db";
+import { Limited, TracerScheduler } from "./utils";
 
 if (cluster.isPrimary) {
   // setup
@@ -78,7 +77,7 @@ if (cluster.isPrimary) {
       app.get("/", (req, res) => {
         const scheduler = new TracerScheduler();
         scheduler
-          .exec(limitedDoSomething(limited, db))
+          .exec(doSomething(limited, db))
           .then(() => res.send(`ok, worker: ${cluster.worker!.id}`))
           .catch((error) => {
             console.log("request error:", error);

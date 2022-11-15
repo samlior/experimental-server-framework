@@ -1,6 +1,6 @@
 import process from "node:process";
 import express from "express";
-import { TracerScheduler, ReturnTypeIs, run, race } from "./scheduler";
+import { TracerScheduler, ReturnTypeIs, race } from "./utils";
 
 const app = express();
 const port = 3000;

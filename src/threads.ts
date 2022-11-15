@@ -8,9 +8,8 @@ import {
 } from "node:worker_threads";
 import { cpus } from "node:os";
 import express from "express";
-import { createDB, limitedDoSomething, destroyDB } from "./db";
-import { Limited } from "./limited";
-import { TracerScheduler } from "./scheduler";
+import { createDB, doSomething, destroyDB } from "./db";
+import { Limited, TracerScheduler } from "./utils";
 
 const port = Number(process.env.SRV_PORT);
 
@@ -104,7 +103,7 @@ if (isMainThread) {
           } else if (method === "request") {
             const scheduler = new TracerScheduler();
             scheduler
-              .exec(limitedDoSomething(limited, db))
+              .exec(doSomething(limited, db))
               .then(() => port.postMessage(`ok, worker: ${threadId}`))
               .catch((error) => {
                 console.log("request error:", error);
