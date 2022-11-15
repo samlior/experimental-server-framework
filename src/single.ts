@@ -1,5 +1,6 @@
 import express from "express";
-import { createDB, doSomething2, destroyDB } from "./db";
+import { createDB, limitedDoSomething, destroyDB } from "./db";
+import { Limited } from "./limited";
 import { TracerScheduler } from "./scheduler";
 
 const port = Number(process.env.SRV_PORT);
@@ -11,10 +12,12 @@ const port = Number(process.env.SRV_PORT);
 
     const app = express();
 
+    const limited = new Limited(1000);
+
     app.get("/", (req, res) => {
       const scheduler = new TracerScheduler();
       scheduler
-        .exec(doSomething2(db))
+        .exec(limitedDoSomething(limited, db))
         .then(() => res.send("ok"))
         .catch((error) => console.log("request error:", error));
       req.socket.on("close", () => {
@@ -42,11 +45,9 @@ const port = Number(process.env.SRV_PORT);
         destroyDB(db)
           .then(() => {
             console.log("finished");
-            process.exit(0);
           })
           .catch((err) => {
             console.log("catch error when server exits:", err);
-            setTimeout(() => process.exit(1), 2000);
           });
       } else {
         console.log("please waiting for exiting");

@@ -1,8 +1,15 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import dotenv from "dotenv";
 import { Sequelize, DataTypes, Model } from "sequelize";
-import * as dotenv from "dotenv";
-import { ReturnTypeIs, run, runNoExcept, toNoExcept } from "./scheduler";
+import { Limited, RequestStatus, Token } from "./limited";
+import {
+  ReturnTypeIs,
+  run,
+  runNoExcept,
+  raceNoExcept,
+  toNoExcept,
+} from "./scheduler";
 
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
@@ -107,12 +114,40 @@ export async function* doSomething2(sequelize: Sequelize): ReturnTypeIs<void> {
     yield* run(user.save({ transaction }));
     // 删
     yield* run(user.destroy({ transaction }));
-    // 提交事务
-    yield* run(transaction.commit());
+    // 这里不用判断, 阻塞提交事务
+    await transaction.commit();
   } catch (error) {
     // 这里不用判断, 阻塞的回滚事务就行
     await transaction.rollback();
     throw error;
+  }
+}
+
+export async function* limitedDoSomething(
+  limited: Limited,
+  sequelize: Sequelize
+) {
+  const { request, getToken } = limited.get();
+  let token: Token;
+  if (request) {
+    const { ok, error, result } = yield* raceNoExcept(toNoExcept(getToken));
+    if (!ok) {
+      if (request.value.status === RequestStatus.Queued) {
+        limited.cancel(request);
+      } else if (result) {
+        limited.put(result);
+      }
+      throw error;
+    }
+    token = result;
+  } else {
+    token = await getToken;
+  }
+
+  try {
+    yield* token.invoke2(doSomething2(sequelize));
+  } finally {
+    limited.put(token);
   }
 }
 

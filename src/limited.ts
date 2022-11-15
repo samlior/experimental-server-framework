@@ -15,14 +15,29 @@ export class Token {
     this.limited = limited;
   }
 
-  async invoke<T>(fn: () => Promise<T>): Promise<T> {
+  async invoke<T>(promise: Promise<T>): Promise<T> {
     if (this.status !== TokenStatus.Stopped) {
       throw new Error("invalid token status");
     }
 
     try {
       this.status = TokenStatus.Working;
-      return await fn();
+      return await promise;
+    } finally {
+      this.status = TokenStatus.Stopped;
+    }
+  }
+
+  async *invoke2<T = unknown, TReturn = any, TNext = unknown>(
+    generator: AsyncGenerator<T, TReturn, TNext>
+  ): AsyncGenerator<T, TReturn, TNext> {
+    if (this.status !== TokenStatus.Stopped) {
+      throw new Error("invalid token status");
+    }
+
+    try {
+      this.status = TokenStatus.Working;
+      return yield* generator;
     } finally {
       this.status = TokenStatus.Stopped;
     }
