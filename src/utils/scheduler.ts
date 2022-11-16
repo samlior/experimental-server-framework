@@ -56,6 +56,15 @@ export function toNoExcept<T>(promise: Promise<T>): Promise<Result<T>> {
     });
 }
 
+export function fromNoExcept<T>(promise: Promise<Result<T>>): Promise<T> {
+  return promise.then(({ ok, error, result }) => {
+    if (!ok) {
+      throw error;
+    }
+    return result;
+  });
+}
+
 export async function* runNoExcept<T>(
   promise: Promise<Result<T>>
 ): AsyncGenerator<Result<T>, Result<T>, Result<Result<T>>> {
