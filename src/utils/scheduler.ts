@@ -111,11 +111,7 @@ export async function* checkNoExcept(): AsyncGenerator<
   return yield await Promise.resolve();
 }
 
-export async function* check(): AsyncGenerator<
-  void,
-  Result<void>,
-  Result<any>
-> {
+export async function* check(): AsyncGenerator<void, void, Result<any>> {
   const { ok, error, result } = yield await Promise.resolve();
   if (!ok) {
     throw error;
